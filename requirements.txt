@@ -1,0 +1,6 @@
+opencv-python==4.9.0.80
+pyrealsense2 @ https://files.pythonhosted.org/packages/e0/8e/6ec1eec2c0d451ac140ec32de55a90316f1f7a0a15bbf02655d6d7893e6f/pyrealsense2-2.50.0.3812-cp39-cp39-win_amd64.whl
+numpy==1.26.4
+wheel
+twine
+setuptools

@@ -1,3 +1,6 @@
+# librealsense2 folder
+librealsense/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
