@@ -1,0 +1,7 @@
+sdk:
+    download_link: https://github.com/IntelRealSense/librealsense/releases/tag/v2.50.0
+
+usefuls_links: 
+    - reconstruction_image: https://github.com/AoLyu/Some-implementions-with-RGBD-camera-RealSense-D435
+    - realsense_python: https://www.python.org/ftp/python/3.9.13/python-3.9.13-amd64.exe
+    - documentation_link: https://snyk.io/advisor/python/pyrealsense2/

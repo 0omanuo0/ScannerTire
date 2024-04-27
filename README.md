@@ -1,6 +1,6 @@
 # ScannerTire
 
-This repository is for rs300 (sense 2 scanner), which uses: [https://github.com/IntelRealSense/librealsense/releases/tag/v2.50.0](https://github.com/IntelRealSense/librealsense/releases/tag/v2.50.0), newer versions don't work.
+This repository is for rs300 (sense 2 scanner), which uses the SDK: [https://github.com/IntelRealSense/librealsense/releases/tag/v2.50.0](https://github.com/IntelRealSense/librealsense/releases/tag/v2.50.0), newer versions don't work.
 ## Installation
 
 To install the project and its dependencies, follow these steps:
