@@ -1,5 +1,6 @@
 # librealsense2 folder
 librealsense/
+Pointnet_Pointnet2_pytorch/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
