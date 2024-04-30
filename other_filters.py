@@ -4,6 +4,63 @@ import numpy as np
 from numba import njit, jit
 
 
+
+def applyFilter(image:np.ndarray, percentile:int)->np.ndarray:
+    threshold = np.percentile(image, percentile)
+    image[image > threshold] = 0
+    return image
+
+@jit(nopython=True)
+#returns 2 arrays
+def getSections(image: np.ndarray, sections: int)->tuple[Frame, np.ndarray]:
+    mean_depth_image = np.zeros(image.shape, dtype=np.float64)
+    
+    mean_depth_graph = np.zeros(sections)
+    
+    max_depth = np.max(image)
+    height = image.shape[0]
+
+    for i in range(sections):
+        start_col = i * (image.shape[1] // sections)
+        end_col = (i + 1) * (image.shape[1] // sections)
+        region = image[:, start_col:end_col]
+
+        # Calcular la media solo para valores mayores que 0 en la región actual
+        total = 0
+        count = 0
+        for row in range(region.shape[0]):
+            for col in range(region.shape[1]):
+                if region[row, col] > 0:
+                    total += region[row, col]
+                    count += 1
+
+        mean_depth = total / count if count > 0 else 0
+        mean_depth_graph[i] = mean_depth
+
+        bar_height = int((mean_depth_graph[i] / max_depth if max_depth > 0 else 0) * image.shape[0])
+        
+        # Crear grafico de barras
+        for row in range(region.shape[0]):
+            for col in range(region.shape[1]):
+                if ( height - row ) < bar_height:
+                    mean_depth_image[row, start_col:end_col] = mean_depth_graph[i]
+                else:
+                    mean_depth_image[row, start_col:end_col] = 0
+    
+                
+    return mean_depth_image, mean_depth_graph
+
+
+
+
+
+
+
+
+
+
+
+
 def filterTemporal(image:np.ndarray, temp:list)->np.ndarray:
     # calculate the mean of the temporal images
     mean_image = np.mean(temp, axis=0)

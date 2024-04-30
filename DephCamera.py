@@ -1,6 +1,75 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
+import threading
+import matplotlib.pyplot as plt
+from scipy.signal import argrelmax, argrelmin
+
+class Graph:
+    def __init__(self) -> None:
+        self.thread : threading.Thread = threading.Thread()
+        self.isShowing : bool = False
+    
+    def isShowing(self)->bool:
+        if self.thread in threading.enumerate():
+            self.isShowing = True
+        else:
+            self.isShowing = False
+        return self.isShowing
+        
+    def showImg(self, img:np.ndarray)->None:
+        if self.isShowing:
+            return
+        self.thread
+        self.thread = threading.Thread(target=self.__showImg, args=(img,))
+        self.thread.start()
+    
+    def __showImg(self, img:np.ndarray)->None:
+        plt.imshow(img)
+        plt.show()
+        # wait for the user to close the graph
+        plt.pause(0.01)
+        plt.close()
+        self.isShowing = False
+        
+    def showGraph(self, data:np.ndarray)->None:
+        if self.isShowing:
+            return
+        self.thread = threading.Thread(target=self.__showGraph, args=(data,))
+        self.thread.start()
+        
+    def __showGraph(self, graph_data:np.ndarray):
+        self.isShowing = True
+        peaks = argrelmax(graph_data, order=10)
+        valleys = argrelmin(graph_data, order=10)
+        
+        #remove the first and last peak and valley
+        peaks = (peaks[0][1:-1],)
+        valleys = (valleys[0][1:-1],)
+        
+        plt.plot(graph_data)
+        # show also the value peaks and valleys
+        plt.scatter(peaks, graph_data[peaks], color='red')
+        plt.scatter(valleys, graph_data[valleys], color='green')
+        
+        for i in range(len(peaks[0])):
+            x = peaks[0][i]
+            y = graph_data[peaks[0][i]]
+            value = f"{graph_data[peaks[0][i]]:.2f}"
+            plt.text(x, y, value, fontsize=9, color='red')
+        for i in range(len(valleys[0])):
+            x = valleys[0][i]
+            y = graph_data[valleys[0][i]]
+            value = f"{graph_data[valleys[0][i]]:.2f}"
+            plt.text(x, y, value, fontsize=9, color='green')
+        
+        plt.show()
+        # wait for the user to close the graph
+        plt.pause(0.01)
+        # pause the thread
+        plt.waitforbuttonpress()
+        plt.close()
+        self.isShowing = False
 
 
 class Frame(np.ndarray):
@@ -29,7 +98,7 @@ class Frame(np.ndarray):
     def Stack(self, other):
        return np.hstack((self._input_array, other))
 
-    def toNumpy(self):
+    def toNumpy(self)->np.ndarray:
         return self._input_array
     
 
