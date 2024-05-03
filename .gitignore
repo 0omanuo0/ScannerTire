@@ -1,3 +1,6 @@
+*.npy
+*.stl
+
 # librealsense2 folder
 librealsense/
 Pointnet_Pointnet2_pytorch/

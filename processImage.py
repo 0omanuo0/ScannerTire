@@ -7,6 +7,11 @@ import matplotlib.pyplot as plt
 
 from other_filters import applyFilter, getSections
 
+def generateFromSections(sections : list[np.ndarray], n_sections:int)->np.ndarray:
+    x_coords = list(np.linspace(1, n_sections*10, n_sections))
+    linfit = interp1d(x_coords, np.vstack(sections), axis=0)
+    return linfit(list(np.linspace(1,n_sections*10, n_sections*10))) 
+    
 
 def main():
     cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
@@ -46,25 +51,24 @@ def main():
                 elif cv2.waitKey(1) & 0xFF == ord('v'):
                     print("Saving section")
                     sections.append(graph_data)
-                elif cv2.waitKey(1) & 0xFF == ord('p'):
-                    ## merge all sections and interpolate 10 times the vectors to get the final image
+                elif cv2.waitKey(1) & 0xFF == ord('o'):
                     n_sections = len(sections)
-                    
                     if n_sections < 5:
                         print("Not enough sections")
                         continue
                     
-                    x_coords = list(np.linspace(1, n_sections*10, n_sections))
-                    
-                    linfit = interp1d(x_coords, np.vstack(sections), axis=0)
-                    
-                    final = linfit(list(np.linspace(1,n_sections*10, n_sections*10)))
-                    
-                    # plt.imshow(final)
-                    # plt.show()
-                    
-                    # # print(final)      
+                    final = generateFromSections(sections, n_sections)
+                    graph.saveGraph(final, "final.stl", overwrite=True)
                     graph.showImg(final)
+                elif cv2.waitKey(1) & 0xFF == ord('p'):
+                    n_sections = len(sections)
+                    if n_sections < 5:
+                        print("Not enough sections")
+                        continue
+                    
+                    final = generateFromSections(sections, n_sections)
+                    graph.saveGraph(final, "final.stl", overwrite=True)
+                    graph.show3dGraph(final)
                     
                 
                 mean_depth_colormap = mean_depth_colormap.convertTocv2(scale=contrast)
