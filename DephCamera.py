@@ -19,7 +19,7 @@ class Graph:
             
             return cropped_image
 
-        image = remove_black_lines(image)
+        image = remove_black_lines(data)
         # Get image dimensions
         height, width = image.shape
         plt.imshow(image)
