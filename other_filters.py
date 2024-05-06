@@ -11,7 +11,47 @@ def applyFilter(image:np.ndarray, percentile:int)->np.ndarray:
     return image
 
 @jit(nopython=True)
-#returns 2 arrays
+def getSectionsCenter(image: np.ndarray, height_region: int, sections: int = 200) -> tuple[Frame, np.ndarray]:
+    mean_depth_image = np.zeros(image.shape, dtype=np.float64)
+    mean_depth_graph = np.zeros(sections)
+
+    max_depth = np.max(image)
+    height = image.shape[0]
+
+    center = image.shape[0] // 2
+    region_IMG = image[center - height_region // 2:center + height_region // 2]
+
+    for i in range(sections):
+        start_col = i * (region_IMG.shape[1] // sections)
+        end_col = (i + 1) * (region_IMG.shape[1] // sections)
+        region = region_IMG[:, start_col:end_col]
+
+        total = 0
+        count = 0
+        for row in range(region.shape[0]):
+            for col in range(region.shape[1]):
+                if region[row, col] > 0:
+                    total += region[row, col]
+                    count += 1
+
+        mean_depth = total / count if count > 0 else 0
+        mean_depth_graph[i] = mean_depth
+
+        bar_height = int((mean_depth / max_depth if max_depth > 0 and not np.isnan(mean_depth) else 0) * region_IMG.shape[0])
+
+        for row in range(image.shape[0]):
+            for col in range(start_col, end_col):  # Adjusted to update only the current section's region
+                if ( height - row ) < bar_height:
+                    mean_depth_image[row, start_col:end_col] = mean_depth_graph[i]
+                else:
+                    mean_depth_image[row, start_col:end_col] = 0
+
+    return mean_depth_image, mean_depth_graph
+
+    
+    
+    
+@jit(nopython=True)
 def getSections(image: np.ndarray, sections: int)->tuple[Frame, np.ndarray]:
     mean_depth_image = np.zeros(image.shape, dtype=np.float64)
     

@@ -5,7 +5,7 @@ from numba import jit
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
-from other_filters import applyFilter, getSections
+from other_filters import applyFilter, getSections, getSectionsCenter
 
 def generateFromSections(sections : list[np.ndarray], n_sections:int)->np.ndarray:
     x_coords = list(np.linspace(1, n_sections*10, n_sections))
@@ -17,7 +17,7 @@ def main():
     cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
     
     cv2.createTrackbar('contrast', 'RealSense', 100, 1000, lambda x: x)
-    cv2.createTrackbar('percentile', 'RealSense', 80, 100, lambda x: x)
+    cv2.createTrackbar('height', 'RealSense', 200, 480, lambda x: x)
     
     graph = Graph()
     
@@ -36,12 +36,17 @@ def main():
             depth_image = cam.getDepthImage()
             if depth_image is not None:
                 
-                percentile = cv2.getTrackbarPos('percentile', 'RealSense')
+                height = cv2.getTrackbarPos('height', 'RealSense')
                 contrast = cv2.getTrackbarPos('contrast', 'RealSense')/1000
                 
                 mean_depth_colormap = Frame.asFrame(depth_image.toNumpy())
-                mean_depth_colormap = mean_depth_colormap.processFrame(applyFilter, (percentile,))
-                mean_depth_colormap2, graph_data = getSections(mean_depth_colormap.toNumpy(), 200)
+                
+                mean_depth_colormap = mean_depth_colormap.processFrame(applyFilter, (80,))
+                if mean_depth_colormap is None:
+                    continue
+                
+                mean_depth_colormap2, graph_data = getSectionsCenter(mean_depth_colormap.toNumpy(), height)
+                # mean_depth_colormap2, graph_data = getSections(mean_depth_colormap.toNumpy(), 200)
                 
                 mean_depth_colormap2 = Frame(mean_depth_colormap2)
                 
