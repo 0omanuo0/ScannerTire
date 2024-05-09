@@ -10,8 +10,8 @@ def applyFilter(image:np.ndarray, percentile:int)->np.ndarray:
     image[image > threshold] = 0
     return image
 
-@jit(nopython=True)
-def getSectionsCenter(image: np.ndarray, height_region: int, sections: int = 200) -> tuple[Frame, np.ndarray]:
+# @jit(nopython=True)
+def getSectionsCenter(image: np.ndarray, height_region: int, adjust_values:np.ndarray=None, sections: int = 200) -> tuple[Frame, np.ndarray]:
     mean_depth_image = np.zeros(image.shape, dtype=np.float64)
     mean_depth_graph = np.zeros(sections)
 
@@ -35,6 +35,7 @@ def getSectionsCenter(image: np.ndarray, height_region: int, sections: int = 200
                     count += 1
 
         mean_depth = total / count if count > 0 else 0
+        mean_depth = mean_depth + adjust_values[i] if adjust_values is not None else mean_depth
         mean_depth_graph[i] = mean_depth
 
         bar_height = int((mean_depth / max_depth if max_depth > 0 and not np.isnan(mean_depth) else 0) * region_IMG.shape[0])

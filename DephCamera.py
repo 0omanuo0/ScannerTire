@@ -77,8 +77,10 @@ class Graph:
         if extension == "stl":
             stl_mesh = self.__generateMeshGrid(data).save(filename)
         elif extension == "npy":
-            with open(filename, 'wb') as f:
-                np.save(f, data)
+            np.save(filename, data)
+            # read the file to check if it was saved correctly
+            a = np.load(filename)
+            print(a.shape)
         
             
     def show3dGraph(self, data:np.ndarray)->None:
@@ -137,8 +139,8 @@ class Graph:
         valleys = argrelmin(graph_data, order=10)
         
         #remove the first and last peak and valley
-        peaks = (peaks[0][1:-1],)
-        valleys = (valleys[0][1:-1],)
+        # peaks = (peaks[0][1:-1],)
+        # valleys = (valleys[0][1:-1],)
         
         plt.plot(graph_data)
         # show also the value peaks and valleys
@@ -211,7 +213,10 @@ class DephCamera:
         
         self.config.enable_stream(rs.stream.depth, resolution[0], resolution[1], format, fps)
         self.pipeline.start(self.config)
-        
+    
+    def getProfile(self)->rs.video_stream_profile:
+        return self.pipeline.get_active_profile().get_stream(rs.stream.depth)
+    
     def getDepthImage(self)->Frame:
         try:
             frames = self.pipeline.wait_for_frames()
