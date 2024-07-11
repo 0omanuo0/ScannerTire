@@ -1,8 +1,9 @@
 *.stl
 
+
 # librealsense2 folder
 librealsense/
-Pointnet_Pointnet2_pytorch/
+realsense_deph/data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
