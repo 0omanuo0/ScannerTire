@@ -10,12 +10,15 @@ class Parameters:
     def __init__(self, fov: float, theta: float, L: float, resolution: tuple[int, int] = (1280, 720)):
         
         self.fov = fov
+        # theta is the angle of the camera with respect to the laser
         self.theta = theta
+        # L is the distance between the camera and the laser
         self.L = L
         self.resolution = resolution
         
+        
         self.x = resolution[0]
-        self.y = resolution[1] // 2
+        self.y = resolution[1] // 2 # center of the image
         
         self.fov_rad = np.deg2rad(fov)
         self.theta_rad = np.deg2rad(theta)
@@ -54,52 +57,29 @@ class Scanner:
     """
     
     
-    DEFAULT_PARAMETERS = Parameters(fov=60, theta=0, L=1000, resolution=(480, 640))
+    DEFAULT_PARAMETERS = Parameters(fov=60, theta=30, L=1000, resolution=(480, 640))
         
     class Filters(Enum):
         RAW = 0
         DEPTH_VALUES = 1
         DISTANCE_VALUES = 2
 
-    def __init__(self, parameters: Parameters = DEFAULT_PARAMETERS, serial_port:str = None):
-        
-        # initialize serial port
-        if serial_port != None:
-            if not isinstance(serial_port, str):
-                raise TypeError("serial_port must be a string")
-            self.ser = serial.Serial('COM7', 9600)
-            data = self.__waitResponseSerial()
-            if data is not None:
-                if not data.startswith("START STEPPER ON LOOP"):
-                    raise ValueError("Invalid serial port")
-            print("Serial port connected")
-            self.ser.write(b"l2")
-            time.sleep(1)
-            
+    def __init__(self, parameters: Parameters = DEFAULT_PARAMETERS, serial_port:str = None, cameraIndex:int = 2):
+                   
         # load params
         self.params = parameters
         
         # load camera
-        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        self.cap = cv2.VideoCapture(cameraIndex, cv2.CAP_DSHOW)
+        self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # Desactivar exposición automática
+        self.cap.set(cv2.CAP_PROP_EXPOSURE, -6)
         print("Camera connected")
-        # set the capture resolution to 1280x720
+        # set the capture resolution to params.resolution
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.params.resolution[0])
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.params.resolution[1])
         print("Scanner initialized")
         
         
-
-    def __waitResponseSerial(self, timeout:int = 2):
-        t1 = timeit.default_timer()
-        timeout_loop = False
-        while (self.ser.in_waiting == 0):
-            if timeit.default_timer() - t1 > timeout:
-                timeout_loop = True
-                break
-            pass
-        if timeout_loop:
-            print("Timeout")
-            return None
-        return self.ser.readline().decode('utf-8')
 
     def calculate_depth(self, image:np.ndarray) -> np.ndarray:
         """
@@ -138,12 +118,16 @@ class Scanner:
                 pixel_offset = row_index - (self.params.y) 
                 phi = pixel_offset * self.params.angle_per_pixel
                 
+                # print(f"Pixel offset: {pixel_offset}, Phi: {phi}")
+
                 # Calculate the depth value (D) for this column
+                # the formula is D = (L * sin(theta)) / sin(phi - theta)
                 D = (self.params.L * np.sin(self.params.theta_rad)) / np.sin(phi - self.params.theta_rad) if phi - self.params.theta_rad != 0 else np.inf
+                
                 depth_values.append(D)
 
             else:
-                depth_values.append(np.nan)  # No laser spot found in this column
+                depth_values.append(np.nan)  # No laser spot found in this column'
         
         return np.array(depth_values)
     
@@ -240,60 +224,33 @@ class Scanner:
         processed_frame = self.processFrame(frame)
         return self.calculate_depth(processed_frame)
     
-    def sendSteps(self, steps: int):
+
+    def processFrames(self, frames: list[np.ndarray], filter:Filters = 0)->list[np.ndarray]:
         """
-        Send the number of steps to the Arduino.
+        Process the frames from the Arduino.
         
         Parameters
         ----------
-        steps : int
-            The number of steps to send to the Arduino.
-        """
-        if not isinstance(steps, int):
-            raise TypeError("steps must be an integer")
-        
-        
-        steps = f"step:{steps}\n"
-        self.ser.write( str.encode(steps, 'ascii') )
-        
-    def getSteps(self, filter:Filters = 0)->list[np.ndarray]:
-        """
-        Get the number of steps from the Arduino.
-        
-        Parameters
-        ----------
-        handler : callable, optional
-            The handler to process the frames from the Arduino.
+        frames : list[np.ndarray]
+            The list of frames from the Arduino.
+        filter : Filters
+            The filter to apply to the frames.
         
         returns
         -------
         list[np.ndarray]
-            The list of images from the Arduino.
+            The list of processed frames.
         """
         
-        # if handler != None:
-        #     # if handler not return a np.ndarray 
-        #     if not isinstance(handler(np.zeros((4, 4))), np.ndarray):
-        #         raise TypeError("handler must return a numpy array")
-        
-        
-        
-        # read the first line (number of steps)
-        steps = self.ser.readline().decode('ascii').strip()
-        
-        frames = []
-        for i in range(int(steps)):
-            data = self.__waitResponseSerial()
-            
-            if(data == "step:1\r\n"):
-                frame = self.getFrame()
-                if filter == Scanner.Filters.RAW:
-                    frames.append(frame)
-                elif filter == Scanner.Filters.DEPTH_VALUES:
-                    frames.append(self.getDepthValues(frame))
-                elif filter == Scanner.Filters.DISTANCE_VALUES:
-                    frames.append(self.calculate_depth(self.processFrame(frame)))
-        return frames
+        processed_frames = []
+        for frame in frames:
+            if filter == Scanner.Filters.RAW:
+                processed_frames.append(frame)
+            elif filter == Scanner.Filters.DEPTH_VALUES:
+                processed_frames.append(self.getDepthValues(frame))
+            elif filter == Scanner.Filters.DISTANCE_VALUES:
+                processed_frames.append(self.calculate_depth(self.processFrame(frame)))
+        return processed_frames
 
     def __del__(self):
         if hasattr(self, 'cap'):
@@ -304,17 +261,31 @@ class Scanner:
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    scanner = Scanner(serial_port="COM7")
-    scanner.sendSteps(100)
-    frames = scanner.getSteps(Scanner.Filters.DEPTH_VALUES)
+    # scanner = Scanner(serial_port="COM7")
+    # scanner.sendSteps(100)
+    # frames = scanner.getSteps(Scanner.Filters.DEPTH_VALUES)
     
-    frames = np.array(frames)
+    # frames = np.array(frames)
     
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    x = np.arange(frames.shape[1])
-    y = np.arange(frames.shape[0])
-    X, Y = np.meshgrid(x, y)
-    ax.plot_surface(X, Y, frames, cmap='viridis')
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # x = np.arange(frames.shape[1])
+    # y = np.arange(frames.shape[0])
+    # X, Y = np.meshgrid(x, y)
+    # ax.plot_surface(X, Y, frames, cmap='viridis')
+    # plt.show()
+
+
+    ## instead of using the serial port to comunicate take frames with the terminal
+    scanner = Scanner()
+    # just to try take a frame and process it
+    frame = scanner.getFrame()
+    processed_frame = scanner.processFrame(frame)
+    depth_values = scanner.calculate_depth(processed_frame)
+    # print(depth_values)
+    plt.imshow(processed_frame)
     plt.show()
+    plt.imshow(frame)
+    plt.show()
+
     

@@ -6,7 +6,7 @@
 #define STEPPER_MICROSENCOND (unsigned long)80000 * 8
 
 bool l1 = false;
-bool l2 = false;
+bool l2 = true;
 
 void setup() {
 
@@ -16,6 +16,7 @@ void setup() {
   digitalWrite(STEPPER, LOW);
   pinMode(2, OUTPUT);
   pinMode(3, OUTPUT);
+  digitalWrite(2, true);
 
   Serial.println("START STEPPER ON LOOP");
 }
