@@ -1,5 +1,7 @@
 *.stl
-
+*.npy
+*.c
+.vscode/
 
 # librealsense2 folder
 librealsense/
