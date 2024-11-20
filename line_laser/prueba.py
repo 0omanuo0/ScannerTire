@@ -1,4 +1,7 @@
-from Scanner import Scanner, Parameters
+# LEGACY CODE (DON'T USE, dont work)
+
+
+from line_laser.src.Scanner import Scanner, Parameters
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
