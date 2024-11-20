@@ -4,6 +4,7 @@ import timeit
 import time
 from enum import Enum
 from src.Calibration import calibrateCamera
+from compute_dxData import processFrame # type: ignore
 
 
 def removeSpikes(dz, th=6, min_length=10):
@@ -167,13 +168,17 @@ class Scanner:
         DEPTH_VALUES = 1
         DISTANCE_VALUES = 2
 
-    def __init__(self, parameters: Parameters = DEFAULT_PARAMETERS, cameraIndex:int = 2):
+    def __init__(self, parameters: Parameters = DEFAULT_PARAMETERS, cameraIndex:int = 2, ignoreCamera:bool=False):
                    
         # load params
         self.params = parameters
         
         # load camera
         self.cap = cv2.VideoCapture(cameraIndex, cv2.CAP_DSHOW)
+        # make sure the camera is connected
+        if not self.cap.isOpened() and not ignoreCamera:
+            print("Camera not connected")
+            return
         self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # Desactivar exposición automática
         self.cap.set(cv2.CAP_PROP_EXPOSURE, -6)
         print("Camera connected")
@@ -205,41 +210,44 @@ class Scanner:
         np.ndarray
             The processed frame with the laser spot.
         """
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
-        # Define el rango de color rojo en HSV
-        # Nota: El color rojo en HSV puede estar en dos rangos debido a su naturaleza circular
-        lower_red1 = np.array([0, 70, 50])
-        upper_red1 = np.array([10, 255, 255])
-        lower_red2 = np.array([170, 70, 50])
-        upper_red2 = np.array([180, 255, 255])
-
-        # Crea una máscara para los píxeles que están dentro de los rangos definidos
-        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-        mask = cv2.bitwise_or(mask1, mask2)
-
-        # Aplica la máscara a la imagen original para obtener solo los píxeles rojos
-        result = cv2.bitwise_and(frame, frame, mask=mask)
+        return processFrame(frame)
         
-        # filtro solo rojo a 
-        result_red = result.copy()
-        result_red[:, :, 0] = 0
-        result_red[:, :, 1] = 0
+        # hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        # # Define el rango de color rojo en HSV
+        # # Nota: El color rojo en HSV puede estar en dos rangos debido a su naturaleza circular
+        # lower_red1 = np.array([0, 70, 50])
+        # upper_red1 = np.array([10, 255, 255])
+        # lower_red2 = np.array([170, 70, 50])
+        # upper_red2 = np.array([180, 255, 255])
+
+        # # Crea una máscara para los píxeles que están dentro de los rangos definidos
+        # mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        # mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        # mask = cv2.bitwise_or(mask1, mask2)
+
+        # # Aplica la máscara a la imagen original para obtener solo los píxeles rojos
+        # result = cv2.bitwise_and(frame, frame, mask=mask)
+        
+        # # filtro solo rojo a 
+        # result_red = result.copy()
+        # result_red[:, :, 0] = 0
+        # result_red[:, :, 1] = 0
             
-        gray = cv2.cvtColor(result_red, cv2.COLOR_BGR2GRAY)
+        # gray = cv2.cvtColor(result_red, cv2.COLOR_BGR2GRAY)
 
-        # Crear una imagen negra para el resultado
-        result_luminous = np.zeros_like(gray)
+        # # Crear una imagen negra para el resultado
+        # result_luminous = np.zeros_like(gray)
 
-        # Buscar el punto más luminoso de cada columna
-        for col in range(gray.shape[1]):
-            column = gray[:, col]
-            max_idx = np.argmax(column)
-            if column[max_idx] > 0:  # Solo considerar si hay un punto rojo
-                result_luminous[max_idx, col] = 255
+        # # Buscar el punto más luminoso de cada columna
+        # for col in range(gray.shape[1]):
+        #     column = gray[:, col]
+        #     max_idx = np.argmax(column)
+        #     if column[max_idx] > 0:  # Solo considerar si hay un punto rojo
+        #         result_luminous[max_idx, col] = 255
         
-        return result_luminous
+        # return result_luminous
+
     
     def getFrame(self)->np.ndarray:
         """
