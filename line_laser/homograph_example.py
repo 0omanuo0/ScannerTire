@@ -1,10 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
-import glob
-from line_laser.src.Calibration import calibrateCamera
-from line_laser.src.InterativePlot import interactive_plot
-
+from src.Calibration import calibrateCamera
+from src.InterativePlot import interactive_plot
+# use agg backend
+plt.switch_backend('Tkagg')
 # Parámetros conocidos
 
 
