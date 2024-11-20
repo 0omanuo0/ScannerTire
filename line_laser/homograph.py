@@ -1,167 +1,169 @@
-import cv2
 import numpy as np
+import matplotlib.pyplot as plt
+import cv2
 import glob
+from Calibration import calibrateCamera
+from InterativePlot import interactive_plot
 
-def calibrateCamera():
-    # Known parameters
-    square_size = 25  # Size of a square in mm
-    pattern_size = (10, 7)  # Internal corners in the chessboard
+# Parámetros conocidos
 
-    # Generate 3D real-world points
-    objp = np.zeros((pattern_size[0] * pattern_size[1], 3), np.float32)
-    objp[:, :2] = np.mgrid[0:pattern_size[0], 0:pattern_size[1]].T.reshape(-1, 2)
-    objp *= square_size
-
-    objpoints, imgpoints = [], []  # 3D and 2D points
-
-    # Load calibration images
-    calibration_images = glob.glob('calibration_images/*.jpg')
-    if not calibration_images:
-        print("No calibration images found.")
-        return None
-
-    for fname in calibration_images:
-        image = cv2.imread(fname)
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-        # Detect chessboard corners
-        ret, corners = cv2.findChessboardCorners(gray, pattern_size, None)
-        if ret:
-            # Refine corner accuracy
-            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-            corners_subpix = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-            objpoints.append(objp)
-            imgpoints.append(corners_subpix)
-            img_shape = gray.shape[::-1]
-        else:
-            print(f"Chessboard corners not detected in {fname}")
-
-    if not objpoints:
-        print("No valid chessboard corners found in any image.")
-        return None
-
-    # Camera calibration
-    _, mtx, dist, _, _ = cv2.calibrateCamera(objpoints, imgpoints, img_shape, None, None)
-
-    # Use the first image for homography calculation
-    corners_undistorted = cv2.undistortPoints(imgpoints[0], mtx, dist, P=mtx)
-    H, _ = cv2.findHomography(corners_undistorted, objpoints[0][:, :2])
-
-    # Calculate the translation matrix to set the origin to the chessboard center
-    center_idx = len(objpoints[0]) // 2
-    center_world = objpoints[0][center_idx, :2]
-    T = np.array([[1, 0, -center_world[0]], [0, 1, -center_world[1]], [0, 0, 1]])
-
-    # Combine translation and homography
-    H_final = np.dot(T, H)
-
-    return H_final
 
 H_total = calibrateCamera()
 
 
-from Scanner import Scanner, Parameters
-import matplotlib.pyplot as plt
 
-p = Parameters(theta=30, fov=60, L=300, resolution=(1920, 1080))
-scanner = Scanner(cameraIndex=2, parameters=p)
-frames = []
-dataframes = []
+# load numpy array from .npy file
+data = np.load('dataframes.npy')
+# Assuming 'data' is already defined
+allDxData = []
+window_size = 5  # Adjust the window size as needed
 
-# get image from camera (realtime)
-cap = cv2.VideoCapture(2)
-# set the resolution
-cap.set(3, 1920)
 
-while True:
-    f = scanner.getFrame()
-    # rotate 180 degrees
-    f = np.rot90(f, 2)
-    # display the frame and the data stacked
-    d = scanner.processFrame(f)
-    cv2.imshow('Data', np.concatenate((f, cv2.merge([d, d, d])), axis=1))
+for d in data:
+    d = np.transpose(d)
+
+    dxData = []
+    for i, j in enumerate(d):
+        k = 0
+        nonzero_indices = np.nonzero(j)[0]
+        if nonzero_indices.size != 0 and nonzero_indices[0] < 450:
+            k = int(nonzero_indices[0])
+
+        dxData.append([i, k])
+
+    dxData_points = np.array(dxData, dtype=np.float32).reshape(-1, 1, 2)
+
+    # Perform the perspective transformation
+    transformed_dxData = cv2.perspectiveTransform(dxData_points, H_total)
+    dxP = transformed_dxData[:, :, 1]
+
+    # calculate dz = dx / tan(30)
+    dzP = dxP / np.tan(np.pi/6)
+    allDxData.append(dzP)
+
+
+
+# interactive_plot(allDxData[0], title='Interactive Plot')
+
+# copy allDxData[0] to dz
+import random
+dz = allDxData[random.randint(0, len(allDxData) - 1)]
+# resize (1920, 1) to 1920
+dz = dz.reshape(1920)
+
+import numpy as np
+
+def removeSpikes(dz, th=6, min_length=10):
+    dz = np.array(dz)
+    n = len(dz)
+    if n == 0:
+        return dz.tolist()
+
+    # Inicializar variables
+    tramos_start = []
+    tramos_end = []
+    tramo_sizes = []
+    tramo_start = 0
+
+    # Identificar los límites de los tramos y su tamaño
+    for i in range(1, n):
+        if abs(dz[i] - dz[i - 1]) >= th:
+            tramos_start.append(tramo_start)
+            tramos_end.append(i - 1)
+            tramo_sizes.append(tramos_end[-1] - tramos_start[-1] + 1)
+            tramo_start = i
+    # Agregar el último tramo
+    tramos_start.append(tramo_start)
+    tramos_end.append(n - 1)
+    tramo_sizes.append(tramos_end[-1] - tramos_start[-1] + 1)
+
+    # Inicializar variables para interpolación
+    result = dz.copy()
+    idx = 0
+    last_large_segment_end = None
+    small_segments_indices = []
+
+    while idx < len(tramos_start):
+        start = tramos_start[idx]
+        end = tramos_end[idx]
+        tramo_len = tramo_sizes[idx]
+
+        if tramo_len < min_length:
+            # Acumular índices de tramos pequeños consecutivos
+            small_segments_indices.append((start, end))
+        else:
+            # Si hay tramos pequeños acumulados, interpolar a través de ellos
+            if small_segments_indices:
+                # Determinar los límites de interpolación
+                if last_large_segment_end is not None:
+                    left_value = dz[last_large_segment_end]
+                else:
+                    left_value = dz[small_segments_indices[0][0]]
+
+                right_value = dz[start]
+
+                # Obtener el rango completo para interpolar
+                interp_start = small_segments_indices[0][0]
+                interp_end = small_segments_indices[-1][1]
+                total_len = interp_end - interp_start + 1
+
+                # Interpolar a través de todos los tramos pequeños acumulados
+                interpolated_values = np.linspace(left_value, right_value, total_len)
+                result[interp_start:interp_end+1] = interpolated_values
+
+                # Limpiar acumulador de tramos pequeños
+                small_segments_indices = []
+
+            # Actualizar el fin del último tramo grande
+            last_large_segment_end = end
+
+        idx += 1
+
+    # Si los últimos tramos son pequeños, interpolar hasta el final
+    if small_segments_indices:
+        if last_large_segment_end is not None:
+            left_value = dz[last_large_segment_end]
+        else:
+            left_value = dz[small_segments_indices[0][0]]
+
+        right_value = dz[small_segments_indices[-1][1]]  # Usar el último valor disponible
+        interp_start = small_segments_indices[0][0]
+        interp_end = small_segments_indices[-1][1]
+        total_len = interp_end - interp_start + 1
+
+        # Interpolar o extrapolar
+        interpolated_values = np.linspace(left_value, right_value, total_len)
+        result[interp_start:interp_end+1] = interpolated_values
+
+    return result.tolist()
+
+
+# convert shape 1920 to 500-1250
+xshape = len(range(500, 1250))
+
+result = []
+for dz in allDxData:
+    dz = dz.reshape(1920)
+    dz_interpolated = removeSpikes(dz, th=10, min_length=20)
+    dz_interpolated = removeSpikes(dz_interpolated, th=6, min_length=20)
+    # crop from 500 to 1250
+    dz_interpolated = dz_interpolated[500:1250]
     
-    frames.append(f)
-    dataframes.append(d)
-
-    # if cv2.waitKey(1) & 0xFF == ord('q'):
-    #     break
-    # elif cv2.waitKey(1) & 0xFF == ord('s'):
-    #     # Matriz total de homografía
-    #     H_total = H_translate.dot(H)
-
-    #     # Crear un array vacío para almacenar los valores de dx
-    #     dx_array = np.zeros(d.shape[1], dtype=np.float32)
-
-    #     # Iterar sobre cada columna de la imagen 'd'
-    #     for col in range(d.shape[1]):
-    #         # Encontrar el primer píxel no nulo en la columna
-    #         non_zero_rows = np.where(d[:, col] > 0)[0]
-            
-    #         if len(non_zero_rows) > 0:
-    #             row = non_zero_rows[0]  # Coordenada de fila del primer píxel no nulo
-    #             point = np.array([[[col, row]]], dtype=np.float32)  # Punto en coordenadas de imagen
-                
-    #             # Calcular la transformación de perspectiva para este punto
-    #             transformed_point = cv2.perspectiveTransform(point, H_total)
-                
-    #             # Calcular dx como la diferencia entre el punto transformado y el original
-    #             dx = transformed_point[0, 0, 0] - point[0, 0, 0]
-    #         else:
-    #             # Si no hay píxel no nulo, dx = 0
-    #             dx = 0
-            
-    #         # Asignar dx al array
-    #         dx_array[col] = dx
-
-    #     # Imprimir o guardar los resultados
-        
-    #     # convert to inverse geometric triangulation of the laser 
-    #     # FORMULA: dz = dx/tan(theta)
-    #     dzPoints = []
-    #     for point in dx_array:
-    #         dz = point / np.tan(np.radians(30))
-    #         dzPoints.append(dz)
-    #     plt.plot(dx_array)
-    #     plt.plot(dzPoints)
-    #     plt.show()
-    #     # frames.append(dzPoints)
-    #     # print(len(frames))
-    if cv2.waitKey(1) & 0xFF == ord('p'):
-        # save the frames into data.npy
-        np.save('frames.npy', frames)
-        np.save('dataframes.npy', dataframes)
-
-        # if len(frames) > 0:
-        #     fd = np.array(frames)
-        #     plt.plot(fd[0])
-        #     # print(fd[0])
-        #     print(fd.shape)
-        #     fig = plt.figure()
-        #     ax = fig.add_subplot(111, projection='3d')
-        #     x = np.arange(fd.shape[1])
-        #     y = np.arange(fd.shape[0])
-        #     X, Y = np.meshgrid(x, y)
-        #     ax.plot_surface(X, Y, fd, cmap='viridis')
-        #     # set the z axis limits
-        #     ax.set_zlim(0, -400)
-        #     plt.show()
-
-   
-
-    # # display in a hystogram the depth values with the frame (opencv)
-    # black = np.zeros((f.shape[0], f.shape[1], 3), np.uint8)
-    # for i, dz in enumerate(dzPoints):
-    #     cv2.line(black, (i, 0), (i, int(dz)), (255, 255, 255), 1)
-    
-    # # join data and f, first convert data to 3 channels
-    # black = np.concatenate((black, f), axis=1)
-    # cv2.imshow('Data', black)
-    
+    result.append(dz_interpolated)
 
 
 
-
-
-
-
+# plot in 3d the data
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+x = np.arange(0, xshape)
+y = np.arange(0, 273)
+x, y = np.meshgrid(x, y)
+z = np.array(result)
+z2 = z.copy()
+z2 = cv2.GaussianBlur(z2, (11, 11), sigmaX=0, sigmaY=0)
+# z = z.reshape(273, xshape)
+z2 = z2.reshape(273, xshape)
+# ax.plot_surface(x, y, z, cmap='plasma')
+ax.plot_surface(x, y, z2, cmap='viridis')
+plt.show()
