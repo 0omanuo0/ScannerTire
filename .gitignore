@@ -6,6 +6,7 @@
 # librealsense2 folder
 librealsense/
 realsense_deph/data/
+calibration_images/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
