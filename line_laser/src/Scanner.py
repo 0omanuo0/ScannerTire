@@ -4,7 +4,7 @@ import timeit
 import time
 from enum import Enum
 from src.Calibration import calibrateCamera
-from compute_dxData import processFrame # type: ignore
+from compute_dxData import processFrame, compute_dxData_cython # type: ignore
 
 
 def removeSpikes(dz, th=6, min_length=10):
@@ -168,7 +168,7 @@ class Scanner:
         DEPTH_VALUES = 1
         DISTANCE_VALUES = 2
 
-    def __init__(self, parameters: Parameters = DEFAULT_PARAMETERS, cameraIndex:int = 2, ignoreCamera:bool=False):
+    def __init__(self, parameters: Parameters = DEFAULT_PARAMETERS, cameraIndex:int = 2, ignoreCamera:bool=False, ignoreCalibration:bool=False):
                    
         # load params
         self.params = parameters
@@ -188,13 +188,34 @@ class Scanner:
         print("Scanner initialized")
         
         # load calibration
-        self.H_total = calibrateCamera(
-                                square_size=self.params.pattern_size, 
-                                pattern_size=self.params.pattern, 
-                                calibration_images_str=self.params.calibration_images
-                            )
+        if not ignoreCalibration:
+            # load calibration .npy, if exists, else calibrate
+            try:
+                self.H_total = np.load("H_total.npy")
+            except:
+                self.H_total = calibrateCamera(
+                                        square_size=self.params.pattern_size, 
+                                        pattern_size=self.params.pattern, 
+                                        calibration_images_str=self.params.calibration_images
+                                    )
+                np.save("H_total.npy", self.H_total)
         print("Calibration loaded")
 
+    def getPoints(self, frame:np.ndarray) -> np.ndarray:
+        """
+        Get the [x, y] points of the laser spot in the frame.
+        
+        Parameters
+        ----------
+        frame : np.ndarray
+            The frame to process.
+            
+        Returns
+        -------
+        np.ndarray
+            The points of the laser spot in the frame.
+        """
+        return np.array(compute_dxData_cython(frame), dtype=np.float32).reshape(-1, 1, 2)
     
     def processFrame(self, frame: np.ndarray) -> np.ndarray:
         """
@@ -262,18 +283,21 @@ class Scanner:
         return frame
     
     def calculate_depth(self, image:np.ndarray, trimm:bool=False, remove_spikes:bool=True) -> np.ndarray:
-        d = np.transpose(image)
+        # d = np.transpose(image)
+        d = self.processFrame(image)
 
-        dxData = []
-        for i, j in enumerate(d):
-            k = 0
-            nonzero_indices = np.nonzero(j)[0]
-            if nonzero_indices.size != 0 and nonzero_indices[0] < 450: 
-                k = int(nonzero_indices[0])
+        # dxData = []
+        # for i, j in enumerate(d):
+        #     k = 0
+        #     nonzero_indices = np.nonzero(j)[0]
+        #     if nonzero_indices.size != 0 and nonzero_indices[0] < 450: 
+        #         k = int(nonzero_indices[0])
 
-            dxData.append([i, k])
+        #     dxData.append([i, k])
 
-        dxData_points = np.array(dxData, dtype=np.float32).reshape(-1, 1, 2)
+        # dxData_points = np.array(dxData, dtype=np.float32).reshape(-1, 1, 2)
+        
+        dxData_points = compute_dxData_cython(d)
 
         # Perform the perspective transformation
         transformed_dxData = cv2.perspectiveTransform(dxData_points, self.H_total)
@@ -282,9 +306,10 @@ class Scanner:
         # calculate dz = dx / tan(30)
         dzP = dxP / np.tan(self.params.theta_rad)
 
-        xshape = 1920
+        xshape = len(dzP)
+        # trimm to the midle 750 pixels (using the center of the image)
         if trimm:
-            dzP = dzP[500:1250]
+            dzP = dzP[xshape//2-375:xshape//2+375]
             xshape = 750
         
         dz = dzP.reshape(xshape)

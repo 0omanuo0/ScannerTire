@@ -57,7 +57,7 @@ cpdef np.ndarray[np.uint8_t, ndim=2] processFrame(np.ndarray[np.uint8_t, ndim=3]
     cdef np.ndarray[np.uint8_t, ndim=1] lower_red2 = np.array([170, 70, 50], dtype=np.uint8)
     cdef np.ndarray[np.uint8_t, ndim=1] upper_red2 = np.array([180, 255, 255], dtype=np.uint8)
     
-    # Crear máscaras para detectar el color rojo
+    # Crear máscaras para detectar el color ro jo
     cdef np.ndarray[np.uint8_t, ndim=2] mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
     cdef np.ndarray[np.uint8_t, ndim=2] mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
     cdef np.ndarray[np.uint8_t, ndim=2] mask = cv2.bitwise_or(mask1, mask2)
