@@ -9,6 +9,8 @@ import mplcursors
 from picamera2 import Picamera2
 from libcamera import controls 
 
+import timeit
+
 
 picam = Picamera2()
 config = picam.create_video_configuration(
@@ -37,10 +39,13 @@ cv2.createTrackbar('ISO', 'Data', 0, 15, lambda x: None)
 cv2.createTrackbar('Shutter Speed', 'Data', 1000, 100000, lambda x: None)
 # cv2.createTrackbar('ColorFilter1', 'Data', 0, 255, lambda x: None)
 # cv2.createTrackbar('ColorFilter2', 'Data', 0, 255, lambda x: None)
-cv2.setTrackbarPos('ISO', 'Data', 4)
+cv2.setTrackbarPos('ISO', 'Data', 1)
 cv2.setTrackbarPos('Shutter Speed', 'Data', 10000)
 
 tan_30 = np.tan(np.pi / 6)
+
+time1 = cv2.getTickCount()
+t1 = timeit.default_timer()
 
 while True:
 
@@ -58,13 +63,25 @@ while True:
     f = cv2.cvtColor(f, cv2.COLOR_YUV2BGR_I420)
     
     f = np.rot90(f, 1)
+    t2 = timeit.default_timer()
     data = sc.processFrame(f)
+    t3 = timeit.default_timer()
 
     # show the data in to of f in green
     overlay = f.copy()
     overlay[data > 0] = (0, 255, 0)
-
     
+    # overlay the fps, ms and ticks
+    time2 = cv2.getTickCount()
+    fps = cv2.getTickFrequency() / (time2 - time1)
+    
+    ms = (time2 - time1) * 1000.0 / cv2.getTickFrequency()
+    cv2.putText(overlay, f"{fps:.2f} fps", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    cv2.putText(overlay, f"{ms:.4f} ms", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    cv2.putText(overlay, f"Processing time: {(t3 - t2)*1000:.4f} ms", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    cv2.putText(overlay, f"Total time: {timeit.default_timer() - t1:.2f} s", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    
+    time1 = time2
     cv2.imshow('Data', overlay)
 
     key = cv2.waitKey(1)
