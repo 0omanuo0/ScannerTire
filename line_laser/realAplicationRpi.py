@@ -50,8 +50,9 @@ def frame_generator(num_frames=200):
 
             if frame is not None:
                 frame_queue.put((i, frame), block=True, timeout=0.1)
-                frame_queue.put((i + num_frames, frame), block=True, timeout=0.1)
-                frame_queue.put((i + num_frames*2, frame), block=True, timeout=0.1)
+                # try to check if can handle 3 streams at the same time
+                # frame_queue.put((i + num_frames, frame), block=True, timeout=0.1)
+                # frame_queue.put((i + num_frames*2, frame), block=True, timeout=0.1)
             else:
                 logging.warning(f"Frame {i} is None, ignoring...")
                 
