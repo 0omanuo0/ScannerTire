@@ -1,11 +1,9 @@
 import cv2
 import numpy as np
-import timeit
-import time
-from enum import Enum
 from src.Calibration import calibrateCamera
-from compute_dxData import processFrame # type: ignore
+from compute_dxData import processFrame, compute_dxData_cython # type: ignore
 
+import logging
 
 def removeSpikes(dz, th=6, min_length=10):
     dz = np.array(dz)
@@ -139,62 +137,80 @@ class Scanner:
     ----------
     DEFAULT_PARAMETERS : Parameters
         The default parameters for the scanner.
-    Filters : Enum
-        The filters for the scanner.
         
     Methods
     -------
-    calculate_depth(image:np.ndarray) -> np.ndarray:
+    #### calculate_depth(image:np.ndarray) -> np.ndarray:
         Calculate the depth value for each column with a white pixel (laser spot).
-    processFrame(frame:np.ndarray) -> np.ndarray:
+    #### processFrame(frame:np.ndarray) -> np.ndarray:
         Process the frame to detect the laser spot.
-    getFrame() -> np.ndarray:
+    #### getFrame() -> np.ndarray:
         Get a frame from the camera.
-    getProcessedFrame() -> np.ndarray:
+    #### getProcessedFrame() -> np.ndarray:
         Get a processed frame with the laser spot.
-    getDepthValues(frame:np.ndarray) -> np.ndarray:
+    #### getDepthValues(frame:np.ndarray) -> np.ndarray:
         Get the depth values for the laser spot in the frame.
-    sendSteps(steps:int):
+    #### sendSteps(steps:int):
         Send the number of steps to the Arduino.
-    getSteps(handler:callable) -> np.ndarray:
+    #### getSteps(handler:callable) -> np.ndarray:
         Get the number of steps from the Arduino.
     """
     
     
     DEFAULT_PARAMETERS = Parameters(calibration_images="calibration_images/*.jpg", theta=30, L=10, resolution=(1920, 1080))
         
-    class Filters(Enum):
-        RAW = 0
-        DEPTH_VALUES = 1
-        DISTANCE_VALUES = 2
 
-    def __init__(self, parameters: Parameters = DEFAULT_PARAMETERS, cameraIndex:int = 2, ignoreCamera:bool=False):
+    def __init__(self, parameters: Parameters = DEFAULT_PARAMETERS, cameraIndex:int = 2, ignoreCamera:bool=False, ignoreCalibration:bool=False):
                    
         # load params
         self.params = parameters
+        
+        # Logging configuration
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
         
         # load camera
         self.cap = cv2.VideoCapture(cameraIndex, cv2.CAP_DSHOW)
         # make sure the camera is connected
         if not self.cap.isOpened() and not ignoreCamera:
-            print("Camera not connected")
+            logging.error("Camera not connected")
             return
         self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # Desactivar exposición automática
         self.cap.set(cv2.CAP_PROP_EXPOSURE, -6)
-        print("Camera connected")
+        logging.info("Camera connected")
         # set the capture resolution to params.resolution
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.params.resolution[0])
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.params.resolution[1])
-        print("Scanner initialized")
-        
+        logging.info("Scanner initialized")
+        logging.info("Camera resolution set to %dx%d", self.params.resolution[0], self.params.resolution[1])
         # load calibration
-        self.H_total = calibrateCamera(
-                                square_size=self.params.pattern_size, 
-                                pattern_size=self.params.pattern, 
-                                calibration_images_str=self.params.calibration_images
-                            )
-        print("Calibration loaded")
+        if not ignoreCalibration:
+            # load calibration .npy, if exists, else calibrate
+            try:
+                self.H_total = np.load("H_total.npy")
+            except:
+                self.H_total = calibrateCamera(
+                                        square_size=self.params.pattern_size, 
+                                        pattern_size=self.params.pattern, 
+                                        calibration_images_str=self.params.calibration_images
+                                    )
+                np.save("H_total.npy", self.H_total)
+        logging.info("Calibration loaded")
 
+    def getPoints(self, frame:np.ndarray) -> np.ndarray:
+        """
+        Get the [x, y] points of the laser spot in the frame.
+        
+        Parameters
+        ----------
+        frame : np.ndarray
+            The frame to process.
+            
+        Returns
+        -------
+        np.ndarray
+            The points of the laser spot in the frame.
+        """
+        return np.array(compute_dxData_cython(frame), dtype=np.float32).reshape(-1, 1, 2)
     
     def processFrame(self, frame: np.ndarray) -> np.ndarray:
         """
@@ -210,7 +226,34 @@ class Scanner:
         np.ndarray
             The processed frame with the laser spot.
         """
-        return processFrame(frame)
+        
+        red_channel = frame[:, :, 2]
+        
+        # Find the maximum value in each column
+        max_indices = np.argmax(red_channel, axis=0)
+        max_values = red_channel[max_indices, np.arange(red_channel.shape[1])]
+        
+        # Create a mask for columns with a red point
+        mask = max_values > 0
+        
+        # Create the result image
+        result_luminous = np.zeros_like(red_channel)
+        result_luminous[max_indices[mask], np.arange(red_channel.shape[1])[mask]] = 255
+        
+        return result_luminous
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        # return processFrame(frame)
         
         # hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
@@ -262,18 +305,21 @@ class Scanner:
         return frame
     
     def calculate_depth(self, image:np.ndarray, trimm:bool=False, remove_spikes:bool=True) -> np.ndarray:
-        d = np.transpose(image)
+        # d = np.transpose(image)
+        d = self.processFrame(image)
 
-        dxData = []
-        for i, j in enumerate(d):
-            k = 0
-            nonzero_indices = np.nonzero(j)[0]
-            if nonzero_indices.size != 0 and nonzero_indices[0] < 450: 
-                k = int(nonzero_indices[0])
+        # dxData = []
+        # for i, j in enumerate(d):
+        #     k = 0
+        #     nonzero_indices = np.nonzero(j)[0]
+        #     if nonzero_indices.size != 0 and nonzero_indices[0] < 450: 
+        #         k = int(nonzero_indices[0])
 
-            dxData.append([i, k])
+        #     dxData.append([i, k])
 
-        dxData_points = np.array(dxData, dtype=np.float32).reshape(-1, 1, 2)
+        # dxData_points = np.array(dxData, dtype=np.float32).reshape(-1, 1, 2)
+        
+        dxData_points = compute_dxData_cython(d)
 
         # Perform the perspective transformation
         transformed_dxData = cv2.perspectiveTransform(dxData_points, self.H_total)
@@ -282,9 +328,10 @@ class Scanner:
         # calculate dz = dx / tan(30)
         dzP = dxP / np.tan(self.params.theta_rad)
 
-        xshape = 1920
+        xshape = len(dzP)
+        # trimm to the midle 750 pixels (using the center of the image)
         if trimm:
-            dzP = dzP[500:1250]
+            dzP = dzP[xshape//2-375:xshape//2+375]
             xshape = 750
         
         dz = dzP.reshape(xshape)
@@ -301,34 +348,3 @@ class Scanner:
         if hasattr(self, 'cap'):
             self.cap.release()
         
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    # scanner = Scanner(serial_port="COM7")
-    # scanner.sendSteps(100)
-    # frames = scanner.getSteps(Scanner.Filters.DEPTH_VALUES)
-    
-    # frames = np.array(frames)
-    
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    # x = np.arange(frames.shape[1])
-    # y = np.arange(frames.shape[0])
-    # X, Y = np.meshgrid(x, y)
-    # ax.plot_surface(X, Y, frames, cmap='viridis')
-    # plt.show()
-
-
-    ## instead of using the serial port to comunicate take frames with the terminal
-    scanner = Scanner()
-    # just to try take a frame and process it
-    frame = scanner.getFrame()
-    processed_frame = scanner.processFrame(frame)
-    depth_values = scanner.calculate_depth(processed_frame)
-    # print(depth_values)
-    plt.imshow(processed_frame)
-    plt.show()
-    plt.imshow(frame)
-    plt.show()
-
-    
