@@ -2,10 +2,12 @@ import cv2
 import numpy as np
 import glob
 
+
 def calibrateCamera(
         square_size: int = 25,
         pattern_size: tuple = (10, 7),
-        calibration_images_str: str = 'calibration_images/*.jpg'
+        # calibration_images_str: str = 'calibration_images/*.jpg'
+        calibration_images_str: str = 'ci_nr/*.jpg',
 ):
 
     # Generate 3D real-world points
@@ -34,6 +36,7 @@ def calibrateCamera(
             objpoints.append(objp)
             imgpoints.append(corners_subpix)
             img_shape = gray.shape[::-1]
+            print(f"Chessboard corners detected in {fname}")
         else:
             print(f"Chessboard corners not detected in {fname}")
 
@@ -52,7 +55,7 @@ def calibrateCamera(
     center_idx = len(objpoints[0]) // 2
     center_world = objpoints[0][center_idx, :2]
     T = np.array([[1, 0, -center_world[0]], [0, 1, -center_world[1]], [0, 0, 1]])
-
+    
     # Combine translation and homography
     H_final = np.dot(T, H)
 

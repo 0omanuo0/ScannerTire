@@ -5,12 +5,18 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import mplcursors
+import gpiod
 
 from picamera2 import Picamera2
 from libcamera import controls 
 
 import timeit
 
+laserPin = 14
+chip = gpiod.Chip('gpiochip0')
+laser = chip.get_line(laserPin)
+laser.request(consumer="laser", type=gpiod.LINE_REQ_DIR_OUT, default_val=0)
+laser.set_value(1)
 
 picam = Picamera2()
 config = picam.create_video_configuration(
@@ -40,7 +46,7 @@ cv2.createTrackbar('Shutter Speed', 'Data', 1000, 100000, lambda x: None)
 # cv2.createTrackbar('ColorFilter1', 'Data', 0, 255, lambda x: None)
 # cv2.createTrackbar('ColorFilter2', 'Data', 0, 255, lambda x: None)
 cv2.setTrackbarPos('ISO', 'Data', 1)
-cv2.setTrackbarPos('Shutter Speed', 'Data', 10000)
+cv2.setTrackbarPos('Shutter Speed', 'Data', 1000)
 
 tan_30 = np.tan(np.pi / 6)
 
@@ -86,6 +92,9 @@ while True:
 
     key = cv2.waitKey(1)
     if key == ord('q'):
+        laser.set_value(0)
+        # disconnect the pin
+        laser.release()
         break
     if key == ord('s'):
         # rotate data
@@ -97,6 +106,11 @@ while True:
         dxP = transformed_dxData[:, :, 1]
         dzP = dxP / tan_30
         
+        # get the columns just from 200-1000 
+        #dzP = dzP[200:1000, :]
+        #save the dzP as an npy but each time with a different name
+        file_name = f"dzP_{timeit.default_timer()}.npy"
+        np.save(file_name, dzP)
         plt.plot(dzP)
         # # use mouse pointer to see the value of dzP
         mplcursors.cursor(hover=True)

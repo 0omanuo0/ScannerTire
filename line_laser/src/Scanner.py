@@ -157,7 +157,8 @@ class Scanner:
     """
     
     
-    DEFAULT_PARAMETERS = Parameters(calibration_images="calibration_images/*.jpg", theta=30, L=10, resolution=(1920, 1080))
+    # DEFAULT_PARAMETERS = Parameters(calibration_images="calibration_images/*.jpg", theta=30, L=10, resolution=(1920, 1080))
+    DEFAULT_PARAMETERS = Parameters(calibration_images="ci_nr/*.jpg", theta=30, L=10, pattern=(10, 7), pattern_size=25.0, resolution=(1280, 720))
         
 
     def __init__(self, parameters: Parameters = DEFAULT_PARAMETERS, cameraIndex:int = 2, ignoreCamera:bool=False, ignoreCalibration:bool=False):

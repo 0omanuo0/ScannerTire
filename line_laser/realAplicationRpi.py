@@ -18,6 +18,14 @@ from libcamera import controls
 
 import logging
 
+import gpiod
+laserPin = 14
+
+chip = gpiod.Chip('gpiochip0')
+laser = chip.get_line(laserPin)
+laser.request(consumer="laser", type=gpiod.LINE_REQ_DIR_OUT, default_val=0)
+
+laser.set_value(1)  # Turn on the laser
 
 # Camera setup
 picam = Picamera2()
@@ -167,3 +175,4 @@ def plot_results(data):
 # Run the program
 if __name__ == "__main__":
     main()
+    laser.set_value(0)  # Turn off the laser

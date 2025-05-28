@@ -2,11 +2,15 @@
 *.npy
 *.c
 .vscode/
+trash/
 
 # librealsense2 folder
 librealsense/
 realsense_deph/data/
 calibration_images/
+frames/
+*.png
+.*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
