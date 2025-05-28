@@ -14,10 +14,10 @@ import sys
 import time
 
 from concurrent.futures import ThreadPoolExecutor
-from src.Calibration import calibrateCamera
-from src.Scanner import Scanner, Parameters
+from src.Scanner import Scanner
 from picamera2 import Picamera2
 from libcamera import controls
+import math
 
 import logging
 
@@ -49,7 +49,7 @@ laser.set_value(1)  # Enciende el láser
 picam = Picamera2()
 config = picam.create_video_configuration(main={"size": (2304, 1296), "format": "YUV420"})
 picam.configure(config)
-picam.set_controls({"FrameRate": 56.0, "AnalogueGain": 1.0, "ExposureTime": 100000, "AfMode": controls.AfModeEnum.Continuous})
+picam.set_controls({"FrameRate": 56.0, "AnalogueGain": 7.0, "ExposureTime": 1000, "AfMode": controls.AfModeEnum.Continuous})
 picam.start()
 
 # Initialization
@@ -64,18 +64,23 @@ times = []
 queue_size_max = 0
 
 
+# take a picture and measure the ´bytes
+frame = picam.capture_array()
+
 tire_radius = 2044 # truck circumference in steps (in mm =)
-n_frames = 100
+# tire_radius = 1636 # 1413.7164 circumference perimeter, r=4.09090 => 1636steps
+n_frames = 500
 # the camera is 1/2 faster than the tire so if needs to make 100 frames in 1 second,
 # the camera is going to do 2 rounds to get all the frames (one for odd and one for even)
 # but to be sure we need to asume that is half of the speed (the multiplier)
-rotation_speed_multiplier = 2 
+rotation_speed_multiplier = 2
 camera_speed = 50 # camera speed in fps
 # 40rps in encoder or 1rps in tire
-rps = 1
+# rps = 0.25
+rps=0.1
 
 # Function to capture frames from the camera
-def frame_generator(num_frames:int):
+def frame_generator(num_frames: int):
     global value, valuez, laser
     laser.set_value(1)
     time.sleep(2)  # Allow the camera to stabilize
@@ -85,17 +90,16 @@ def frame_generator(num_frames:int):
     prevStateChannelZ = lineZ.get_value()
     prev_count = 0
     
-    
     # how many revolutions are going to be made to take the hole scan
-    rev_times = (((n_frames * rps) / camera_speed) * rotation_speed_multiplier)
+    rev_times = math.ceil(((n_frames * rps) / camera_speed) * rotation_speed_multiplier)
     
     # Calculate the number of steps per frame, based on the tire radius and camera speed and a factor to be sure
-    steps_per_frame = (tire_radius / n_frames) * rev_times
+    steps_per_frame = int((tire_radius / n_frames) * rev_times)
 
-    
     # how many revolutions are taken
-    revs = -1
-    i = 0
+    revs = 0
+    frame_index = 0  # global frame index to prevent duplicate frame tags
+    frames_per_rev = n_frames // rev_times
 
     while True:        
         # Wait for the encoder to trigger
@@ -112,62 +116,71 @@ def frame_generator(num_frames:int):
                 if prevStateChannelZ != currentStateChannelZ:
                     valuez -= 1
                     prevStateChannelZ = currentStateChannelZ
+                    # Check if has taken a full revolution
+                    # if value % tire_radius == 0:
+                    #     revs -= 1
 
-            with lock:
-                log_message = f" | V = {value}    Z = {int(valuez/2)}"
+
+            # with lock:
+            #     log_message = f" | V = {value}    Z = {int(valuez/2)}"
                 
-        # Check if has taken a full revolution
-        if value % tire_radius == 0:
-            revs += 1
-        
+
         # case 0 and on each rev, ex: if steps_per_frame is 64 and rev_times is 4 and tire_radius is 1024:
         # cases 0, 1032, 2056 ...
         # if value == 0 or value >= tire_radius + (steps_per_frame / rev_times) * revs:
         # Check if the encoder has moved enough to capture a frame 
         # if has taken enough steps, if is 0 or if has taken a full revolution + the offset
+        #            or value == 0 \
         if value - prev_count >= steps_per_frame \
-            or value == 0 \
             or value >= tire_radius + (steps_per_frame / rev_times) * revs:
-                
+            
+            # Check if has taken a full revolution
+            if value % tire_radius == 0:
+                revs += 1
+
             # update the value
             prev_count = value
-            
+
             # ends the loop if has taken enough frames
             if len(time_frames) >= n_frames:
                 # reset count 
                 value = 0
                 valuez = 0
                 break
-            
-            i += 1
-            
+
             try:
                 frame = picam.capture_array()
                 frame = cv2.cvtColor(frame, cv2.COLOR_YUV2BGR_I420)
 
+                # the tag is the frame index but with the phase
+                # each rev only takes each n frames, 0, 4, 8; 1, 5, 9; 2, 6, 10; 3, 7, 11...
+                frame_tag = ((frame_index % frames_per_rev) * rev_times) + revs
+                frame_index += 1
+
                 if frame is not None:
                     # Put the frame in the queue with the corresponding index
-                    # the index is calculated as the number of frames taken interlacing the frames, 
-                    # each rev only takes each n frames, 0, 4, 8; 1, 5, 9; 2, 6, 10; 3, 7, 11...
-                    frame_queue.put(((i*rev_times - rev_times + revs), frame), block=True, timeout=0.1)
+                    frame_queue.put((frame_tag, frame), block=True, timeout=0.1)
                 else:
-                    logging.warning(f"Frame {(i*rev_times - rev_times + revs)} is None, ignoring...")
-                    
+                    logging.warning(f"Frame {frame_tag} is None, ignoring...")
+
                 t2 = time.time()
                 fps = 1 / (t2 - t1)
                 t1 = t2
                 time_frames.append(fps)
                 fps_mean = np.mean(time_frames[:-5]) if len(time_frames) > 5 else np.mean(time_frames)
-                log_message += f"\rFrame {i:<5} | FPS: {fps_mean:8.4f} | Queue Size: {frame_queue.qsize():<5}"
-        
+                log_message = f"\rFrame {frame_tag:<5} | FPS: {fps_mean:8.4f} | Queue Size: {frame_queue.qsize():<5}"
+
                 # Imprimir sin salto de línea y forzar la actualización
                 sys.stdout.write(log_message)
                 sys.stdout.flush()
             except Exception as e:
-                logging.error(f"Error capturing frame {i}: {e}")
+                logging.error(f"Error capturing frame {frame_index}: {e}")
+                os._exit(1)
+
     print("")
     stop_event.set()  # Indicate that frame generation has finished
     laser.set_value(0)
+
 
 
 # Function to process frames
@@ -182,13 +195,15 @@ def frame_processor(worker_id):
         global queue_size_max
         t_start = time.time()
         try:
+            # save frame as jpg
+            cv2.imwrite(f"frames/frame_{i}.jpg", frame)
             frame = np.rot90(frame, 1)
             dx_data = scanner.processFrame(frame)
             dx_data = np.rot90(dx_data, 3)
             dx_data_points = scanner.getPoints(dx_data)
             transformed_dx_data = cv2.perspectiveTransform(dx_data_points, scanner.H_total)
             dz_p = transformed_dx_data[:, :, 1] / tan_30
-
+            # dz_p = dz_p[200:1000, :]
             with lock_processed:
                 t_end = time.time()
                 times.append(t_end - t_start)
@@ -232,6 +247,7 @@ def scan(id:str):
     # Sort and save processed data
     dz_processed.sort(key=lambda x: x[0])
     dz_processed_np = np.array([x[1] for x in dz_processed])
+    print(dz_processed_np.shape)
     np.save(f"scans/dz_processed-{id}.npy", dz_processed_np)
     
     # Log processing times
@@ -245,26 +261,7 @@ def scan(id:str):
     logging.info(f"=====================RESULTS=====================")
     
     is_scanning = False
-    # Generate visualization
-    # plot_results(dz_processed_np)
-
-# Function to plot results in 3D
-def plot_results(data):
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
-    
-
-    x_shape = len(data[0])
-    y_shape = len(data)
-    x, y = np.meshgrid(np.arange(0, x_shape), np.arange(0, y_shape))
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection="3d")
-    z_filtered = cv2.GaussianBlur(data, (11, 11), sigmaX=0, sigmaY=0)
-    
-    ax.plot_surface(x, y, z_filtered, cmap="viridis")
-    plt.show()
-    
+   
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
